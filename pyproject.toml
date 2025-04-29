@@ -1,0 +1,9 @@
+[project]
+name = "social-media-agent-map"
+version = "0.1.0"
+description = "An agent enhanced map application used for navigation based on social media multi-modal data."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.12",
+]
