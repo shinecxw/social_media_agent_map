@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>路径复现</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="/js/input.js"></script>
+  <style>
+    body { margin: 0; padding: 0; }
+    #map { width: 100vw; height: 100vh; }
+    .status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 10px;
+      background-color: rgba(255, 255, 255, 0.8);
+      border-radius: 4px;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="status" id="status">正在加载地图...</div>
+
+<script>
+mapboxgl.accessToken = 'pk.eyJ1Ijoic2hpbmV3ZWkiLCJhIjoiY205dmRuamRkMGpsdjJpb2g2YTU0dzByeiJ9.8BEpSYjxPAzwAzhU_VGtMA';
+
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/streets-v11',
+  center: [118.8, 32.06],
+  zoom: 14
+});
+
+const statusEl = document.getElementById('status');
+
+map.on('load', () => {
+  const input = window.routeInput;
+  if (!input?.start?.name) {
+    statusEl.innerText = '错误: 没有找到路径输入数据';
+    return;
+  }
+
+  statusEl.innerText = `正在获取位置: ${input.start.name}...`;
+
+  axios.post("/api/route/point/", { name: input.start.name })
+    .then(res => {
+      const wgs = res.data.wgs84;
+      statusEl.innerText = `已找到: ${input.start.name} (${wgs.lon.toFixed(4)}, ${wgs.lat.toFixed(4)})`;
+      
+      map.setCenter([wgs.lon, wgs.lat]);
+      new mapboxgl.Marker({ color: 'red' })
+        .setLngLat([wgs.lon, wgs.lat])
+        .addTo(map);
+    })
+    .catch(err => {
+      console.error("🚫 获取坐标失败：", err);
+      statusEl.innerText = `获取坐标失败: ${err.message || '未知错误'}`;
+    });
+});
+</script>
+</body>
+</html>
