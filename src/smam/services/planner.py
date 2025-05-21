@@ -381,7 +381,7 @@ def advance_segment(G, current_node, instructions, prev_direction=None, roads_gd
             elif step.get("distance") and not direction and not reference_direction and not action:
                 target_distance = parse_distance(step, transportation)
                 print(f"      处理距离指令: {target_distance}米，交通方式: {transportation}")
-                if i == 0 or current_direction is None:
+                if current_direction is None:
                     all_possible_paths = explore_all_paths_no_backtrack(G, current_node, target_distance, transportation)
                     if all_possible_paths:
                         all_paths.extend(all_possible_paths)
@@ -415,7 +415,7 @@ def advance_segment(G, current_node, instructions, prev_direction=None, roads_gd
                 speed = get_speed_by_transportation(transportation)
                 target_distance = time_value * speed
                 print(f"      处理时间指令: {target_time}，交通方式: {transportation}，转换为距离: {target_distance:.2f}米")
-                if i == 0 or current_direction is None:
+                if current_direction is None:
                     all_possible_paths = explore_all_paths_no_backtrack(G, current_node, target_distance, transportation)
                     if all_possible_paths:
                         all_paths.extend(all_possible_paths)
@@ -813,6 +813,85 @@ def advance_segment(G, current_node, instructions, prev_direction=None, roads_gd
         print(f"      警告: 仅生成圆形范围，未生成路径点")
     return path, total_distance, current_direction, all_paths, circle_needed, circle_radius
 
+def compute_full_path(data, shapefile_path):
+    """计算完整路径"""
+    try:
+        G, roads_gdf = build_graph(shapefile_path)
+        print(f"成功构建路网图: {len(G.nodes)} 节点, {len(G.edges)} 边")
+        
+        start_name = data["start"]["name"]
+        print(f"查询起点: {start_name}")
+        
+        start_coord_gcj = get_amap_coordinates(start_name)
+        if not start_coord_gcj:
+            raise HTTPException(status_code=404, detail=f"无法获取起点 '{start_name}' 的坐标")
+        
+        start_wgs = gcj02_to_wgs84(*start_coord_gcj)
+        print(f"起点坐标 (WGS84): {start_wgs}")
+        current_node = insert_point_on_edge(G, start_wgs)
+
+        full_coords = []
+        instructions = []
+        current_direction = None  # 初始化方向
+
+        for seg_id, seg in data["segments"].items():
+            print(f"\n开始处理 {seg_id}...")
+            try:
+                path_instr = seg.get("path_instructions", [])
+                if path_instr:
+                    print(f"  发现路径指令: {path_instr}")
+                    # 调用 advance_segment，返回路径、距离和方向
+                    segment_path, segment_distance, current_direction = advance_segment(
+                        G, current_node, path_instr, prev_direction=current_direction, roads_gdf=roads_gdf
+                    )
+                    # 验证路径点
+                    for point in segment_path:
+                        if not isinstance(point, tuple) or len(point) != 2:
+                            print(f"错误: 段 {seg_id} 的路径点 {point} 无效")
+                            raise ValueError(f"无效路径点: {point}")
+                    if not segment_path or len(segment_path) <= 1:
+                        print(f"警告: {seg_id} 未生成有效路径")
+                        continue
+                    # 合并路径，排除重复的起点
+                    full_coords.extend(segment_path if not full_coords else segment_path[1:])
+                    current_node = segment_path[-1]
+                    print(f"更新 current_node: {current_node}, 是否在图中: {current_node in G.nodes}")
+
+                    # 生成指令描述
+                    parts = []
+                    for step in path_instr:
+                        step_desc = []
+                        if "action" in step: step_desc.append(step["action"])
+                        if "direction" in step: step_desc.append(step["direction"])
+                        if "distance" in step: step_desc.append(step["distance"])
+                        if "time" in step: step_desc.append(f"{step['time']}分钟")
+                        parts.append(" ".join(step_desc))
+                    text = " → ".join(parts)
+                    instructions.append({
+                        "segment": seg_id,
+                        "description": text,
+                        "point_count": len(segment_path)
+                    })
+                    print(f"完成路径指令，路径点数: {len(segment_path)}")
+                else:
+                    print(f"{seg_id} 没有路径指令")
+            except Exception as e:
+                print(f"处理 {seg_id} 时出错: {e}")
+                raise e
+        
+        if not full_coords or len(full_coords) < 2:
+            raise Exception("未能生成有效的路径点")
+            
+        print(f"完成路径生成，总路径点数: {len(full_coords)}")
+        return {
+            "geojson": path_to_geojson(full_coords),
+            "instructions": instructions,
+            "path": full_coords  # 显式返回路径点列表
+        }
+    except Exception as e:
+        print(f"路径计算过程中出错: {e}")
+        raise e
+
 def handle_turn(G, current_node, current_direction, direction, roads_gdf=None, transport="walk"):
     print(f"      执行转弯: {direction}，当前方向: {current_direction:.2f}°，交通方式: {transport}，开始大胆探索，时间: 09:02 PM +08, Saturday, May 17, 2025")
 
@@ -1084,81 +1163,3 @@ def convert_and_print_coordinates(start_name):
     start_wgs = gcj02_to_wgs84(*start_coord_gcj)
     print(f"转换后的起点坐标 (WGS-84): {start_wgs}")
     return start_wgs
-def compute_full_path(data, shapefile_path):
-    """计算完整路径"""
-    try:
-        G, roads_gdf = build_graph(shapefile_path)
-        print(f"成功构建路网图: {len(G.nodes)} 节点, {len(G.edges)} 边")
-        
-        start_name = data["start"]["name"]
-        print(f"查询起点: {start_name}")
-        
-        start_coord_gcj = get_amap_coordinates(start_name)
-        if not start_coord_gcj:
-            raise HTTPException(status_code=404, detail=f"无法获取起点 '{start_name}' 的坐标")
-        
-        start_wgs = gcj02_to_wgs84(*start_coord_gcj)
-        print(f"起点坐标 (WGS84): {start_wgs}")
-        current_node = insert_point_on_edge(G, start_wgs)
-
-        full_coords = []
-        instructions = []
-        current_direction = None  # 初始化方向
-
-        for seg_id, seg in data["segments"].items():
-            print(f"\n开始处理 {seg_id}...")
-            try:
-                path_instr = seg.get("path_instructions", [])
-                if path_instr:
-                    print(f"  发现路径指令: {path_instr}")
-                    # 调用 advance_segment，返回路径、距离和方向
-                    segment_path, segment_distance, current_direction = advance_segment(
-                        G, current_node, path_instr, prev_direction=current_direction, roads_gdf=roads_gdf
-                    )
-                    # 验证路径点
-                    for point in segment_path:
-                        if not isinstance(point, tuple) or len(point) != 2:
-                            print(f"错误: 段 {seg_id} 的路径点 {point} 无效")
-                            raise ValueError(f"无效路径点: {point}")
-                    if not segment_path or len(segment_path) <= 1:
-                        print(f"警告: {seg_id} 未生成有效路径")
-                        continue
-                    # 合并路径，排除重复的起点
-                    full_coords.extend(segment_path if not full_coords else segment_path[1:])
-                    current_node = segment_path[-1]
-                    print(f"更新 current_node: {current_node}, 是否在图中: {current_node in G.nodes}")
-
-                    # 生成指令描述
-                    parts = []
-                    for step in path_instr:
-                        step_desc = []
-                        if "action" in step: step_desc.append(step["action"])
-                        if "direction" in step: step_desc.append(step["direction"])
-                        if "distance" in step: step_desc.append(step["distance"])
-                        if "time" in step: step_desc.append(f"{step['time']}分钟")
-                        parts.append(" ".join(step_desc))
-                    text = " → ".join(parts)
-                    instructions.append({
-                        "segment": seg_id,
-                        "description": text,
-                        "point_count": len(segment_path)
-                    })
-                    print(f"完成路径指令，路径点数: {len(segment_path)}")
-                else:
-                    print(f"{seg_id} 没有路径指令")
-            except Exception as e:
-                print(f"处理 {seg_id} 时出错: {e}")
-                raise e
-        
-        if not full_coords or len(full_coords) < 2:
-            raise Exception("未能生成有效的路径点")
-            
-        print(f"完成路径生成，总路径点数: {len(full_coords)}")
-        return {
-            "geojson": path_to_geojson(full_coords),
-            "instructions": instructions,
-            "path": full_coords  # 显式返回路径点列表
-        }
-    except Exception as e:
-        print(f"路径计算过程中出错: {e}")
-        raise e
