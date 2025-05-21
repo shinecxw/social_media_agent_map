@@ -2,65 +2,404 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>路径复现</title>
+  <title>OSM路径模拟</title>
+  <!-- 先加载第三方库 -->
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-  <script src="/js/input.js"></script>
+
   <style>
-    body { margin: 0; padding: 0; }
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     #map { width: 100vw; height: 100vh; }
-    .status {
+    .control-panel {
       position: absolute;
       top: 10px;
       left: 10px;
-      padding: 10px;
-      background-color: rgba(255, 255, 255, 0.8);
+      padding: 15px;
+      background-color: rgba(255, 255, 255, 0.9);
       border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
       z-index: 1;
+      max-width: 350px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .title {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 5px 0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .route-info {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
+      font-size: 14px;
+    }
+    .instruction {
+      margin: 5px 0;
+      padding: 8px;
+      background-color: #f8f8f8;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .endpoints-list {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
+      font-size: 14px;
+    }
+    .endpoint-item {
+      margin: 5px 0;
+      padding: 8px;
+      background-color: #f8f8f8;
+      border-radius: 4px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+    }
+    .endpoint-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      display: inline-block;
+    }
+    .loader {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #3498db;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .buttons {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+    }
+    button {
+      padding: 6px 12px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
     }
   </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="status" id="status">正在加载地图...</div>
+<div class="control-panel">
+  <div class="title">OSM路径模拟</div>
+  <div class="status" id="status">准备中...</div>
+  <div class="buttons">
+    <button id="loadStart">定位起点</button>
+    <button id="simulateRoute" disabled>模拟路径</button>
+  </div>
+  <div class="route-info" id="routeInfo"></div>
+  <div class="endpoints-list" id="endpointsList" style="display: none;"></div>
+</div>
 
 <script>
-mapboxgl.accessToken = 'pk.eyJ1Ijoic2hpbmV3ZWkiLCJhIjoiY205dmRuamRkMGpsdjJpb2g2YTU0dzByeiJ9.8BEpSYjxPAzwAzhU_VGtMA';
-
-const map = new mapboxgl.Map({
-  container: 'map',
-  style: 'mapbox://styles/mapbox/streets-v11',
-  center: [118.8, 32.06],
-  zoom: 14
+// 确保在DOM加载完成后再初始化地图
+document.addEventListener('DOMContentLoaded', () => {
+  // 先加载input.js
+  const script = document.createElement("script");
+  script.src = "/js/input.js?t=" + Date.now();
+  script.onload = () => {
+    initMap();
+  };
+  document.head.appendChild(script);
 });
 
-const statusEl = document.getElementById('status');
+function initMap() {
+  mapboxgl.accessToken = 'pk.eyJ1Ijoic2hpbmV3ZWkiLCJhIjoiY2wyMzg5NmJ5MW54cDNpcDZ4d2FvdTM2OSJ9.U5838iGNGQwG-IwcaDQX7A';
 
-map.on('load', () => {
-  const input = window.routeInput;
-  if (!input?.start?.name) {
-    statusEl.innerText = '错误: 没有找到路径输入数据';
-    return;
-  }
+  const map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/streets-v11',
+    center: [118.8, 32.06],
+    zoom: 14
+  });
 
-  statusEl.innerText = `正在获取位置: ${input.start.name}...`;
+  // DOM 元素
+  const statusEl = document.getElementById('status');
+  const routeInfoEl = document.getElementById('routeInfo');
+  const endpointsListEl = document.getElementById('endpointsList');
+  const loadStartBtn = document.getElementById('loadStart');
+  const simulateRouteBtn = document.getElementById('simulateRoute');
 
-  axios.post("/api/route/point/", { name: input.start.name })
+  // 全局变量
+  let routeInput = null;
+  let startMarker = null;
+  let endMarkers = []; // 存储所有终点标记
+  let routeSource = null;
+  const PATH_COLORS = ['#4285F4', '#DB4437', '#F4B400', '#0F9D58', '#9C27B0', '#FF6D00', '#795548']; // 定义一组路径颜色
+loadStartBtn.addEventListener('click', () => {
+  statusEl.innerHTML = `<span class="loader"></span>正在获取起点位置: ${routeInput.start.name}...`;
+  loadStartBtn.disabled = true;
+
+  axios.post("/api/route/point/", { name: routeInput.start.name })
     .then(res => {
       const wgs = res.data.wgs84;
-      statusEl.innerText = `已找到: ${input.start.name} (${wgs.lon.toFixed(4)}, ${wgs.lat.toFixed(4)})`;
-      
-      map.setCenter([wgs.lon, wgs.lat]);
-      new mapboxgl.Marker({ color: 'red' })
+      statusEl.innerHTML = `已定位起点: ${routeInput.start.name}<br>坐标: [${wgs.lon.toFixed(5)}, ${wgs.lat.toFixed(5)}]<br>准备模拟路径...`;
+
+      if (startMarker) startMarker.remove();
+
+      startMarker = new mapboxgl.Marker({ color: '#4285F4' })
         .setLngLat([wgs.lon, wgs.lat])
         .addTo(map);
+
+      map.flyTo({
+        center: [wgs.lon, wgs.lat],
+        zoom: 15,
+        essential: true
+      });
+
+      simulateRouteBtn.disabled = false;
     })
     .catch(err => {
       console.error("🚫 获取坐标失败：", err);
-      statusEl.innerText = `获取坐标失败: ${err.message || '未知错误'}`;
+      statusEl.innerHTML = `获取坐标失败: ${err.response?.data?.detail || err.message || '未知错误'}`;
+      loadStartBtn.disabled = false;
     });
 });
+
+  // 加载地图
+  map.on('load', () => {
+    routeInput = window.routeInput;
+    if (!routeInput) {
+      statusEl.innerHTML = '错误: 未找到路径输入数据';
+      return;
+    }
+
+    statusEl.innerHTML = `已加载路径数据<br>起点: ${routeInput.start.name}<br>终点: ${routeInput.end.name}`;
+    
+    // 添加路径图层
+    map.addSource('route', {
+      'type': 'geojson',
+      'data': {
+        'type': 'FeatureCollection',
+        'features': []
+      }
+    });
+    
+    map.addLayer({
+      'id': 'route-line',
+      'type': 'line',
+      'source': 'route',
+      'layout': {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      'paint': {
+        'line-color': ['get', 'color'],
+        'line-width': 5,
+        'line-opacity': 0.8
+      }
+    });
+   
+    map.addLayer({
+  id: 'circle-fill',
+  type: 'fill',
+  source: 'route',
+  filter: ['all', 
+    ['==', ['get', 'type'], 'circle'],
+    ['==', ['geometry-type'], 'Polygon']
+  ],
+  paint: {
+    'fill-color': ['get', 'color'],
+    'fill-opacity': ['get', 'opacity']
+  }
+});
+routeSource = map.getSource('route');
+
+   
+  });
+
+  // 清除所有终点标记
+  function clearEndMarkers() {
+    endMarkers.forEach(marker => marker.remove());
+    endMarkers = [];
+    endpointsListEl.innerHTML = '';
+    endpointsListEl.style.display = 'none';
+  }
+
+  // 模拟路径
+  simulateRouteBtn.addEventListener('click', () => {
+    if (!routeInput) {
+      statusEl.innerHTML = '错误: 没有找到路径数据';
+      return;
+    }
+
+    statusEl.innerHTML = `<span class="loader"></span>正在模拟路径...`;
+    simulateRouteBtn.disabled = true;
+    
+    // 清除旧的终点标记
+    clearEndMarkers();
+
+    axios.post("/api/route/simulate/", routeInput)
+      .then(res => {
+        const routeData = res.data;
+
+        console.log("路径数据:", routeData);  // 调试，确保路径数据完整
+
+        // 更新路径图层
+        routeSource.setData(routeData.route);
+        // 清除旧的终点标记
+        clearEndMarkers();
+        // 获取主终点颜色和坐标
+        const mainEndPoint = routeData.route.features.find(f => f.properties.type === 'endpoint');
+        const mainEndColor = mainEndPoint ? mainEndPoint.properties.color : '#DB4437'; // 使用GeoJSON中的颜色或默认红色
+        const mainEndCoords = routeData.end?.coordinates || mainEndPoint?.geometry?.coordinates || [0, 0];
+        if (routeData.node_count > 1) {  // 或检查 routeData.route.features 中是否有 type = 'endpoint' 的特征
+          const mainEndCoords = routeData.end.coordinates;
+        
+          // 添加主终点标记
+          const mainEndMarker = new mapboxgl.Marker({ color: mainEndColor })
+            .setLngLat([mainEndCoords.lon, mainEndCoords.lat])
+            .addTo(map);
+          endMarkers.push(mainEndMarker);
+      }// 添加中间点标记（绿色点）
+          const intermediatePointFeatures = routeData.route.features.filter(f => 
+            f.geometry.type === 'Point' && f.properties.type === 'intermediate_point'
+          );
+
+          console.log("找到中间点特征:", intermediatePointFeatures); // 调试用
+
+          intermediatePointFeatures.forEach(feature => {
+            const coords = feature.geometry.coordinates;
+            const color = feature.properties.color; // 应该是绿色 (#00FF00)
+            
+            // 创建中间点标记
+            const intermediateMarker = new mapboxgl.Marker({ color: color })
+              .setLngLat(coords)
+              .addTo(map);
+            
+            endMarkers.push(intermediateMarker);
+            
+            // 可选：在控制台输出以便调试
+            console.log(`添加中间点标记: 坐标=[${coords}], 颜色=${color}`);
+          });
+
+        // 添加可能的终点标记和信息
+        if (routeData.possible_end_points && routeData.possible_end_points.length > 0) {
+          endpointsListEl.style.display = 'block';
+          endpointsListEl.innerHTML = '<div class="title">可能的终点列表</div>';
+          
+          // 添加主路径终点
+          const mainEndpointItem = document.createElement('div');
+          mainEndpointItem.className = 'endpoint-item';
+          const mainColorSpan = document.createElement('span');
+          mainColorSpan.className = 'endpoint-color';
+          mainColorSpan.style.backgroundColor = mainEndColor;
+          mainEndpointItem.appendChild(mainColorSpan);
+          mainEndpointItem.appendChild(document.createTextNode(
+            `主路径终点: [${mainEndCoords.lon.toFixed(5)}, ${mainEndCoords.lat.toFixed(5)}]`
+          ));
+          endpointsListEl.appendChild(mainEndpointItem);
+           // 查找所有可能终点的GeoJSON特性
+          const endPointFeatures = routeData.route.features.filter(f => 
+          f.properties.type === 'possible_endpoint');
+        
+          
+          // 添加所有可能的终点
+          routeData.possible_end_points.forEach((endpoint, index) => {
+            // 尝试从GeoJSON中找到对应的特性以获取颜色
+            const feature = endPointFeatures.find(f => 
+              f.geometry.coordinates[0] === endpoint.coordinates.lon && 
+              f.geometry.coordinates[1] === endpoint.coordinates.lat);
+            
+            const color = feature ? feature.properties.color : PATH_COLORS[(index + 1) % PATH_COLORS.length];
+            
+            // 创建标记
+            const marker = new mapboxgl.Marker({ color: color })
+              .setLngLat([endpoint.coordinates.lon, endpoint.coordinates.lat])
+              .addTo(map);
+            endMarkers.push(marker);
+              
+              // 创建终点信息列表项
+              const endpointItem = document.createElement('div');
+              endpointItem.className = 'endpoint-item';
+              
+              const colorSpan = document.createElement('span');
+              colorSpan.className = 'endpoint-color';
+              colorSpan.style.backgroundColor = color;
+              
+              endpointItem.appendChild(colorSpan);
+              endpointItem.appendChild(document.createTextNode(
+                `终点 ${index + 1}: [${endpoint.coordinates.lon.toFixed(5)}, ${endpoint.coordinates.lat.toFixed(5)}]` +
+                ` - 路段 ${endpoint.segment_id}` +
+                ` - 距离 ${endpoint.distance.toFixed(2)}米` +
+                (endpoint.direction ? ` - 方向 ${endpoint.direction}` : '')
+              ));
+              
+              endpointsListEl.appendChild(endpointItem);
+            });
+        }
+
+        // 调整地图视角以显示整个路径和所有终点
+        const bounds = new mapboxgl.LngLatBounds();
+        
+        // 添加主路径所有点到边界
+        routeData.route.features.forEach(feature => {
+          if (feature.geometry.type === 'LineString') {
+            feature.geometry.coordinates.forEach(coord => {
+              bounds.extend(coord);
+            });
+          } else if (feature.geometry.type === 'Point') {
+            bounds.extend(feature.geometry.coordinates);
+          }
+        });
+        
+        // 添加所有可能终点到边界
+        if (routeData.possible_end_points) {
+          routeData.possible_end_points.forEach(endpoint => {
+            bounds.extend([endpoint.coordinates.lon, endpoint.coordinates.lat]);
+          });
+        }
+
+        map.fitBounds(bounds, {
+          padding: 50,
+          duration: 1000
+        });
+
+        // 更新状态
+        statusEl.innerHTML = `路径计算完成!<br>总距离: ${routeData.distance.toFixed(2)}米<br>节点数: ${routeData.node_count}`;
+        if (routeData.possible_end_points && routeData.possible_end_points.length > 0) {
+          statusEl.innerHTML += `<br>可能的终点数量: ${routeData.possible_end_points.length}`;
+        }
+        
+        simulateRouteBtn.disabled = false;
+      })
+      .catch(err => {
+        console.error("🚫 路径模拟失败：", err);
+        statusEl.innerHTML = `路径模拟失败: ${err.response?.data?.detail || err.message || '未知错误'}`;
+        simulateRouteBtn.disabled = false;
+      });
+  });
+}
 </script>
 </body>
 </html>

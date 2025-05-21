@@ -1,0 +1,92 @@
+example :苜蓿园站1号口向北步行300多米就到明孝陵3号口               #交通方式+绝对方向+距离
+  {
+    start: { name: "苜蓿园站1号口", type: "STA", feature_type: "Point" },
+    end: { name: "明孝陵3号口", type: "TOU", feature_type: "Point" },
+    segments: {
+      segment_1: {
+        segment_start: { name: "苜蓿园站1号口", type: "STA", feature_type: "Point" },
+        segment_end: { name: "明孝陵3号口" },
+        path_instructions: [
+          { direction: "north", distance: "300m",transport:"walk" }
+        ]
+      }
+    }
+  }
+example :苜蓿园站1号口向北步行3分钟就到明孝陵3号口               #交通方式+绝对方向+时间
+  {
+    start: { name: "苜蓿园站1号口", type: "STA", feature_type: "Point" },
+    end: { name: "明孝陵3号口", type: "TOU", feature_type: "Point" },
+    segments: {
+      segment_1: {
+        segment_start: { name: "苜蓿园站1号口", type: "STA", feature_type: "Point" },
+        segment_end: { name: "明孝陵3号口" },
+        path_instructions: [
+          { direction: "north", time: "3min",transport:"walk" }
+          ]
+        }
+      }
+    }
+  
+example : 到了南京站转地铁3号线，做两站到鸡鸣寺站下车，从5口出去后右拐，步行大概500米到鸡鸣寺。 # OUT  相对方向   交通方式+距离
+ {
+    start: { name: "鸡鸣寺站5号口", type: "STA", feature_type: "Point"},
+    end: { name: "鸡鸣寺", type: "TOU", feature_type: "Polygon"},
+    segments: {
+      segment_1: {
+        segment_start: { name: "鸡鸣寺站5号口", type: "STA", feature_type: "Point"},
+        segment_end: { name: "鸡鸣寺", type: "TOU", feature_type: "Polygon"},
+        path_instructions: [
+          { action:"out"},
+          { action:"Turn",direction: "right"},
+          { transport:"walk",distance: "500m" }
+        ]
+      }
+    }
+  }
+
+example :地铁1号线玄武门站下，从玄武门进入景区，向前大概走300米向左边走，看到路两侧有梧桐树左走到头就看到通往梁洲的桥了  #go straight 相对方向   go to the end 
+ {
+    start: { name: "玄武门", type: "Tou", feature_type: "Point"},
+    end: { name: "桥", type: "NAT", feature_type: "Line"},
+    segments: {
+      segment_1: {
+        segment_start: { name: "玄武门", type: "Tou", feature_type: "Point"},
+        segment_end: { name: "桥", type: "NAT", feature_type: "Line"},
+        path_instructions: [
+          { action:"go straight", transport:"walk", distance: "300m" },
+          { action:"Turn", direction: "left"},
+          { action:"go to the end"}
+        ]
+      }
+    }
+  };
+
+example: 从鸡鸣寺站坐3号线2站到大行宫步行7分钟到达总统府         #交通方式+时间
+ {
+    start: { name: "大行宫地铁站", type: "STA", feature_type: "Point" },
+    end: { name: "总统府", type: "TOU", feature_type: "Polygon" },
+    segments: {
+      segment_1: {
+        segment_start: {name: "大行宫地铁站", type: "STA", feature_type: "Point" },
+        segment_end: { name: "总统府", type: "TOU", feature_type: "Polygon" },
+        path_instructions: [
+          { time: "7min",transport:"walk" }
+          ]
+        }
+      }
+  }
+
+example: 流徽榭往中山陵方向走5分钟的梧桐大道是音乐台          #参照性方向+时间+交通方式
+ {
+    start: { name: "流徽榭", type: "TOU", feature_type: "Polygon" },
+    end: { name: "音乐台", type: "TOU", feature_type: "Polygon" },
+    segments: {
+      segment_1: {
+        segment_start: { name: "流徽榭", type: "TOU", feature_type: "Polygon" },
+        segment_end: { name: "音乐台", type: "TOU", feature_type: "Polygon" },
+        path_instructions: [
+          { reference_direction: "中山陵",time: "5min",transport:"walk" }
+        ]
+      }
+    }
+ }
